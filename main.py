@@ -45,8 +45,6 @@ for col in highly_correlated_pairs:
             
 print(f"Found {len(candidate_pairs)} highly correlated candidate pairs.")
 
-
-# --- 4. Test Cointegration Only on Candidate Pairs (Precise Test) ---
 def find_cointegrated_pairs(candidate_pairs, dataframe):
     pairs = []
     
@@ -100,3 +98,79 @@ else:
     plt.legend()
     plt.grid(True)
     plt.show()
+
+    # BOLLINGER BANDS
+    moving_average = best_pair_spread.rolling(window=20).mean()
+    moving_std_dev = best_pair_spread.rolling(window=20).std()
+    upper_band = moving_average + 2 * moving_std_dev
+    lower_band = moving_average - 2 * moving_std_dev
+
+    plt.figure(figsize=(12,6))
+    best_pair_spread.plot(label='Spread', color='blue')
+    moving_average.plot(label='Moving Average', color='black', linestyle='--')
+    upper_band.plot(label='Upper Band', color='red', linestyle=':')
+    lower_band.plot(label='Lower Band', color='green', linestyle=':')
+    plt.title(f'Bollinger Bands on {stock1_name} / {stock2_name} Spread')
+    plt.ylabel('Spread Ratio')
+    plt.xlabel('Date')
+    plt.legend()
+    plt.grid(True)
+    plt.show() 
+
+    print("\nStep 4: Running the vectorized backtest...")
+
+    backtest_df = pd.DataFrame({
+        'spread': best_pair_spread,
+        'moving_average': moving_average,
+        'upper_band': upper_band,
+        'lower_band': lower_band
+    }).dropna()
+
+    backtest_df['position'] = 0
+    in_position = 0
+
+    for index, row in backtest_df.iterrows():
+        if in_position == 1 and row['spread'] >= row['moving_average']:
+            in_position = 0
+        elif in_position == -1 and row['spread'] <= row['moving_average']:
+            in_position = 0
+        
+        if in_position == 0:
+            if row['spread'] > row['upper_band']:
+                in_position = -1
+            elif row['spread'] < row['lower_band']:
+                in_position = 1
+        
+        backtest_df.loc[index, 'position'] = in_position
+
+    
+    # CALCULATING RETURNS
+    backtest_df['spread_return'] = backtest_df['spread'].pct_change()
+    backtest_df['strategy_return'] = backtest_df['spread_return'] * backtest_df['position'].shift(1)
+    
+    # EQUITY CURVE
+    backtest_df['equity_curve'] = (1 + backtest_df['strategy_return']).cumprod()
+
+    # PLOT THE EQUITY CURVE
+    plt.figure(figsize=(12, 6))
+    backtest_df['equity_curve'].plot(label='Pairs Trading Strategy')
+    plt.title(f'Equity Curve for {stock1_name} & {stock2_name}')
+    plt.ylabel('Growth of ₹1 Investment')
+    plt.xlabel('Date')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    # CALCULATE FINAL METRICS
+    annualized_return = backtest_df['equity_curve'].iloc[-1]**(252/len(backtest_df)) - 1
+    annualized_volatility = backtest_df['strategy_return'].std() * np.sqrt(252)
+    if annualized_volatility == 0:
+        sharpe_ratio = 0.0
+    else:
+        sharpe_ratio = annualized_return / annualized_volatility
+
+    print("\n--- Backtest Performance Metrics ---")
+    print(f"Total Return: {(backtest_df['equity_curve'].iloc[-1] - 1) * 100:.2f}%")
+    print(f"Annualized Return: {annualized_return * 100:.2f}%")
+    print(f"Annualized Volatility: {annualized_volatility * 100:.2f}%")
+    print(f"Sharpe Ratio: {sharpe_ratio:.2f}")
