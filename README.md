@@ -86,4 +86,4 @@ The final strategy is validated on the out-of-sample period (Jan 2020 - Jan 2025
   ```bash
   python main.py
   ```
-- The script will run the full pipeline: download data, find the best pair, optimize parameters, run the final backtest, display the equity curve, print the final metrics to the console, and generate the `strategy_tearsheet.html` report file.
+- The script will run the full pipeline: download data, find the best pair, optimize parameters, run the final backtest, display the equity curve, print the final metrics to the console, and generate the `strategy_tearsheet.html` report file to view
