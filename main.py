@@ -9,9 +9,8 @@ from nifty50_tickers import NIFTY50_TICKERS
 
 START_DATE = '2020-01-01'
 END_DATE = '2025-01-01'
-CORRELATION_THRESHOLD = 0.95 # threshold for fast filter
+CORRELATION_THRESHOLD = 0.95 
 
-# DOWNLOADING DATA
 print(f"Downloading data for {len(NIFTY50_TICKERS)} stocks...")
 try:
     data = yf.download(NIFTY50_TICKERS, start=START_DATE, end=END_DATE, progress=True)
@@ -26,16 +25,9 @@ if data.empty:
 prices = data['Close'].copy().dropna(axis=1)
 print("\nData download and cleaning complete.")
 
-
-# faster filtering by taking correlation first then searching if it meets correlation thresholder 
-# this avoids running the ADF test on pairs which are obviously unrelated
 print(f"\nStep 1: Finding pairs with correlation > {CORRELATION_THRESHOLD}...")
 corr_matrix = prices.corr()
-# getting upper triangle of the correlation matrix
-# we do this step as the diagonal will always be 1 (the correlation with itself is 1) 
-# and the matrix is symmetric (STOCK1, STOCK2) = (STOCK2, STOCK1) so we can remove the lower triangle
 upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-# find index pairs with correlation above the threshold
 highly_correlated_pairs = [column for column in upper_tri.columns if any(upper_tri[column] > CORRELATION_THRESHOLD)]
 candidate_pairs = []
 for col in highly_correlated_pairs:
@@ -47,29 +39,21 @@ print(f"Found {len(candidate_pairs)} highly correlated candidate pairs.")
 
 def find_cointegrated_pairs(candidate_pairs, dataframe):
     pairs = []
-    
     for stock1_name, stock2_name in candidate_pairs:
-        stock1_prices = dataframe[stock1_name]
-        stock2_prices = dataframe[stock2_name]
-        
-        spread = stock1_prices / stock2_prices
+        spread = dataframe[stock1_name] / dataframe[stock2_name]
         result = adfuller(spread)
         pvalue = result[1]
-        
         if pvalue < 0.05:
             pairs.append((stock1_name, stock2_name, pvalue))
-            
     return pairs
 
 print("\nStep 2: Running cointegration test on candidate pairs...")
 cointegrated_pairs = find_cointegrated_pairs(candidate_pairs, prices)
 
-
 if not cointegrated_pairs:
     print("No statistically significant cointegrated pairs found.")
 else:
     sorted_pairs = sorted(cointegrated_pairs, key=lambda x: x[2])
-    
     print("\n--- Top Cointegrated Pairs Found ---")
     for pair in sorted_pairs:
         print(f"  - Pair: {pair[0]} & {pair[1]}, P-value: {pair[2]:.4f}")
@@ -99,7 +83,6 @@ else:
     plt.grid(True)
     plt.show()
 
-    # BOLLINGER BANDS
     moving_average = best_pair_spread.rolling(window=20).mean()
     moving_std_dev = best_pair_spread.rolling(window=20).std()
     upper_band = moving_average + 2 * moving_std_dev
@@ -117,7 +100,7 @@ else:
     plt.grid(True)
     plt.show() 
 
-    print("\nStep 4: Running the vectorized backtest...")
+    print("\nStep 4: Running the backtest with a stop-loss...")
 
     backtest_df = pd.DataFrame({
         'spread': best_pair_spread,
@@ -128,40 +111,46 @@ else:
 
     backtest_df['position'] = 0
     in_position = 0
+    entry_price = 0
+    STOP_LOSS_THRESHOLD = 0.1 # 10% threshold 
 
     for index, row in backtest_df.iterrows():
-        if in_position == 1 and row['spread'] >= row['moving_average']:
-            in_position = 0
+        # checking for stop loss
+        if in_position == 1 and row['spread'] < entry_price * (1 - STOP_LOSS_THRESHOLD):
+            in_position = 0 
+        elif in_position == -1 and row['spread'] > entry_price * (1 + STOP_LOSS_THRESHOLD):
+            in_position = 0 
+
+        # checking normal exit
+        elif in_position == 1 and row['spread'] >= row['moving_average']:
+            in_position = 0 
         elif in_position == -1 and row['spread'] <= row['moving_average']:
-            in_position = 0
+            in_position = 0 
         
+        # checking entry
         if in_position == 0:
             if row['spread'] > row['upper_band']:
-                in_position = -1
+                in_position = -1 
+                entry_price = row['spread'] 
             elif row['spread'] < row['lower_band']:
-                in_position = 1
+                in_position = 1 
+                entry_price = row['spread'] 
         
         backtest_df.loc[index, 'position'] = in_position
 
-    
-    # CALCULATING RETURNS
     backtest_df['spread_return'] = backtest_df['spread'].pct_change()
     backtest_df['strategy_return'] = backtest_df['spread_return'] * backtest_df['position'].shift(1)
-    
-    # EQUITY CURVE
     backtest_df['equity_curve'] = (1 + backtest_df['strategy_return']).cumprod()
 
-    # PLOT THE EQUITY CURVE
     plt.figure(figsize=(12, 6))
     backtest_df['equity_curve'].plot(label='Pairs Trading Strategy')
-    plt.title(f'Equity Curve for {stock1_name} & {stock2_name}')
+    plt.title(f'Equity Curve for {stock1_name} & {stock2_name} (with Stop-Loss)')
     plt.ylabel('Growth of ₹1 Investment')
     plt.xlabel('Date')
     plt.legend()
     plt.grid(True)
     plt.show()
 
-    # CALCULATE FINAL METRICS
     annualized_return = backtest_df['equity_curve'].iloc[-1]**(252/len(backtest_df)) - 1
     annualized_volatility = backtest_df['strategy_return'].std() * np.sqrt(252)
     if annualized_volatility == 0:
@@ -169,7 +158,7 @@ else:
     else:
         sharpe_ratio = annualized_return / annualized_volatility
 
-    print("\n--- Backtest Performance Metrics ---")
+    print("\n--- Backtest Performance Metrics (with Stop-Loss) ---")
     print(f"Total Return: {(backtest_df['equity_curve'].iloc[-1] - 1) * 100:.2f}%")
     print(f"Annualized Return: {annualized_return * 100:.2f}%")
     print(f"Annualized Volatility: {annualized_volatility * 100:.2f}%")
