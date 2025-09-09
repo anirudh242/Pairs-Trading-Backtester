@@ -83,8 +83,8 @@ else:
     plt.grid(True)
     plt.show()
 
-    moving_average = best_pair_spread.rolling(window=20).mean()
-    moving_std_dev = best_pair_spread.rolling(window=20).std()
+    moving_average = best_pair_spread.rolling(window=40).mean()
+    moving_std_dev = best_pair_spread.rolling(window=40).std()
     upper_band = moving_average + 2 * moving_std_dev
     lower_band = moving_average - 2 * moving_std_dev
 
