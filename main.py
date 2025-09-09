@@ -5,15 +5,17 @@ import matplotlib.pyplot as plt
 from statsmodels.tsa.stattools import adfuller
 import sys
 
-from nifty50_tickers import NIFTY50_TICKERS
+from tickers import NIFTY50_TICKERS, NIFTY100_TICKERS, NIFTY_IT_TICKERS, US_BLUECHIP_TICKERS, SP100_TICKERS
 
 START_DATE = '2020-01-01'
 END_DATE = '2025-01-01'
 CORRELATION_THRESHOLD = 0.95 
 
-print(f"Downloading data for {len(NIFTY50_TICKERS)} stocks...")
+TICKERS = SP100_TICKERS 
+
+print(f"Downloading data for {len(TICKERS)} stocks...")
 try:
-    data = yf.download(NIFTY50_TICKERS, start=START_DATE, end=END_DATE, progress=True)
+    data = yf.download(TICKERS, start=START_DATE, end=END_DATE, progress=True)
 except Exception as e:
     print(f"Failed to download data: {e}")
     sys.exit()
@@ -163,3 +165,14 @@ else:
     print(f"Annualized Return: {annualized_return * 100:.2f}%")
     print(f"Annualized Volatility: {annualized_volatility * 100:.2f}%")
     print(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+
+    initial_investment = 100000
+    final_growth_factor = backtest_df['equity_curve'].iloc[-1]
+    final_portfolio_value = initial_investment * final_growth_factor
+
+    net_profit = final_portfolio_value - initial_investment
+
+    print(f"\n--- Investment Simulation ---")
+    print(f"Initial Investment: ₹{initial_investment:,.2f}")
+    print(f"Final Portfolio Value: ₹{final_portfolio_value:,.2f}")
+    print(f"Net Profit/Loss: ₹{net_profit:,.2f}")
